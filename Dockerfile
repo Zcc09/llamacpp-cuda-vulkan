@@ -1,4 +1,3 @@
-# --- Stage 1: Builder ---
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
 ARG RELEASE_TAG=master
@@ -11,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     && apt-get update && apt-get install -y vulkan-sdk \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and Build
+
 WORKDIR /app
 RUN git clone --depth 1 --branch ${RELEASE_TAG} https://github.com/ggml-org/llama.cpp.git .
 
@@ -20,19 +19,19 @@ RUN cmake -B build \
     -DGGML_VULKAN=ON \
     -DGGML_NATIVE=OFF \
     -DGGML_BACKEND_DL=ON \
+    -DCMAKE_CUDA_ARCHITECTURES="86;89;90" \
     && cmake --build build --config Release -j$(nproc)
 
-# --- Stage 2: Runtime ---
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
-# Install runtime dependencies only (Vulkan Loader + Curl)
 RUN apt-get update && apt-get install -y \
-    libcurl4 libvulkan1 \
+    libcurl4 \
+    libvulkan1 \
+    mesa-vulkan-drivers \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy executable and dynamic backend libraries
 COPY --from=builder /app/build/bin/ .
 
 EXPOSE 8080
