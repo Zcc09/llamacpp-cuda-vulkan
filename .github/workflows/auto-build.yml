@@ -1,0 +1,53 @@
+name: Build llama.cpp
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Checks every hour
+  workflow_dispatch:      # Allows manual trigger
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Get latest release tag
+        id: get_tag
+        run: |
+          TAG=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r .tag_name)
+          echo "latest_tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Check if image exists
+        id: check
+        run: |
+          EXISTS=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_tag.outputs.latest_tag }} > /dev/null 2>&1 && echo "true" || echo "false")
+          echo "exists=$EXISTS" >> $GITHUB_OUTPUT
+
+      - name: Checkout
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          build-args: RELEASE_TAG=${{ steps.get_tag.outputs.latest_tag }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_tag.outputs.latest_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
