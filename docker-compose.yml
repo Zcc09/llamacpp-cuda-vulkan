@@ -7,7 +7,7 @@ services:
     ports:
       - "30069:8080"
     volumes:
-      - "/mnt/Fast/Apps/llamacpp:/models"
+      - "/mnt/Fast/Apps/llamacpp/models:/models"
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video,display
