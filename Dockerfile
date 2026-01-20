@@ -2,32 +2,38 @@ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
 ARG RELEASE_TAG=master
 
-# Install build dependencies and Vulkan SDK
+# 1. Added libopenblas-dev for CPU performance
 RUN apt-get update && apt-get install -y \
     wget gnupg software-properties-common git cmake build-essential libcurl4-openssl-dev \
+    libopenblas-dev \
     && wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add - \
     && wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list \
     && apt-get update && apt-get install -y vulkan-sdk \
     && rm -rf /var/lib/apt/lists/*
 
-
 WORKDIR /app
 RUN git clone --depth 1 --branch ${RELEASE_TAG} https://github.com/ggml-org/llama.cpp.git .
 
+# 2. Enabled GGML_CPU (on by default, but explicit here) and OpenBLAS
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DGGML_VULKAN=ON \
+    -DGGML_CPU=ON \
+    -DGGML_BLAS=ON \
+    -DGGML_BLAS_VENDOR=OpenBLAS \
     -DGGML_NATIVE=OFF \
     -DGGML_BACKEND_DL=ON \
-    -DCMAKE_CUDA_ARCHITECTURES="86;89;90" \
+    -DCMAKE_CUDA_ARCHITECTURES="86;89" \
     && cmake --build build --config Release -j$(nproc)
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
+# 3. Added libopenblas0-pthread to the runtime
 RUN apt-get update && apt-get install -y \
     libcurl4 \
     libvulkan1 \
     mesa-vulkan-drivers \
+    libopenblas0-pthread \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
