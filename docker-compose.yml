@@ -9,6 +9,7 @@ services:
     volumes:
       - "/mnt/Fast/Apps/llamacpp/models:/models"
     environment:
+      - GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video,display
       - GGML_CUDA_GRAPH_OPT=1
