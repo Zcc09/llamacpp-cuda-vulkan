@@ -2,7 +2,7 @@ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
 ARG RELEASE_TAG=master
 
-# Install minimal dependencies for Vulkan and general build
+# Install build dependencies + Vulkan SDK
 RUN apt-get update && apt-get install -y \
     wget gnupg software-properties-common git cmake build-essential libcurl4-openssl-dev \
     && wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add - \
@@ -13,14 +13,15 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 RUN git clone --depth 1 --branch ${RELEASE_TAG} https://github.com/ggml-org/llama.cpp.git .
 
-# FIX: Removed GGML_BACKEND_DL and GGML_BLAS to ensure a stable static build
-# CPU support is ENABLED by default.
+# FIX: We use -j2 instead of -j$(nproc) to prevent OOM (Out of Memory) on GH Actions
+# Explicitly setting Vulkan paths for Ubuntu 22.04
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DGGML_VULKAN=ON \
     -DGGML_NATIVE=OFF \
     -DCMAKE_CUDA_ARCHITECTURES="86;89" \
-    && cmake --build build --config Release -j$(nproc)
+    -DVulkan_INCLUDE_DIR=/usr/include/vulkan \
+    && cmake --build build --config Release -j2
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
