@@ -1,38 +1,66 @@
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+
 
 ARG RELEASE_TAG=master
 
-# Install minimal build dependencies
+
+# Install build dependencies and Vulkan SDK
+
 RUN apt-get update && apt-get install -y \
-    git cmake build-essential libcurl4-openssl-dev \
-    libvulkan-dev vulkan-tools \
+
+    wget gnupg software-properties-common git cmake build-essential libcurl4-openssl-dev \
+
+    && wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add - \
+
+    && wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list \
+
+    && apt-get update && apt-get install -y vulkan-sdk \
+
     && rm -rf /var/lib/apt/lists/*
 
+
+
 WORKDIR /app
+
 RUN git clone --depth 1 --branch ${RELEASE_TAG} https://github.com/ggml-org/llama.cpp.git .
 
-# Build with CUDA and Vulkan enabled
+
 RUN cmake -B build \
+
     -DGGML_CUDA=ON \
+
     -DGGML_VULKAN=ON \
+
     -DGGML_NATIVE=OFF \
-    -DCMAKE_CUDA_ARCHITECTURES="86;89" \
-    && cmake --build build --config Release -j2
+
+    -DGGML_BACKEND_DL=ON \
+
+    -DCMAKE_CUDA_ARCHITECTURES="86;89;90" \
+
+    && cmake --build build --config Release -j$(nproc)
+
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
-# Install runtime libraries for Vulkan
+
 RUN apt-get update && apt-get install -y \
+
     libcurl4 \
+
     libvulkan1 \
+
     mesa-vulkan-drivers \
+
     && rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 
-# Copy binaries
-COPY --from=builder /app/build/bin/ /app/
+
+COPY --from=builder /app/build/bin/ .
+
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/llama-server"]
+
+ENTRYPOINT ["/app/llama-server"] 
