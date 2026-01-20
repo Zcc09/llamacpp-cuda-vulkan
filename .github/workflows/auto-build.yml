@@ -2,9 +2,8 @@ name: Build llama.cpp
 
 on:
   schedule:
-    - cron: '0 * * * *' # Checks every hour
-  workflow_dispatch:      # Allows manual trigger
-
+    - cron: '0 * * * *' 
+  workflow_dispatch: 
 env:
   REGISTRY: ghcr.io
 
