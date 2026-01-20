@@ -27,8 +27,6 @@ services:
       - "99"
       - "--split-mode"
       - "layer"
-      - "--device"
-      - "cuda0,cuda1,vulkan0"
       - "-c"
       - "32000"
       - "-ctk"
