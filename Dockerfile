@@ -2,7 +2,7 @@ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
 ARG RELEASE_TAG=master
 
-# Install build dependencies + Vulkan SDK + Shaderc (Critical for Vulkan linking)
+# 1. Builder Stage: Install all necessary dev headers
 RUN apt-get update && apt-get install -y \
     wget gnupg software-properties-common git cmake build-essential libcurl4-openssl-dev \
     libshaderc-dev libvulkan-dev \
@@ -14,8 +14,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 RUN git clone --depth 1 --branch ${RELEASE_TAG} https://github.com/ggml-org/llama.cpp.git .
 
-# Build with CUDA + Vulkan. 
-# We use -j1 to guarantee stability on GitHub's limited RAM runners.
+# Force a clean static build for stability
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DGGML_VULKAN=ON \
@@ -25,7 +24,10 @@ RUN cmake -B build \
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
-RUN apt-get update && apt-get install -y \
+# 2. Runtime Stage: Fix Exit Code 100
+# We use DEBIAN_FRONTEND=noninteractive and combine update/install
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     libcurl4 \
     libvulkan1 \
     mesa-vulkan-drivers \
@@ -34,10 +36,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy the server and the necessary backend files
+# Copy all compiled binaries from the builder
 COPY --from=builder /app/build/bin/ /app/
 
 EXPOSE 8080
 
-# Use the full path for the entrypoint
 ENTRYPOINT ["/app/llama-server"]
