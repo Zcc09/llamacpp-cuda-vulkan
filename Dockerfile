@@ -23,6 +23,7 @@ RUN cmake -B build \
     -DBUILD_SHARED_LIBS=ON \
     -DCMAKE_CUDA_ARCHITECTURES="86;89;90" \
     -DCMAKE_INSTALL_PREFIX=/app/install \
+    -DCMAKE_INSTALL_LIBDIR=bin \
     && cmake --build build --config Release -j$(nproc) \
     && cmake --install build --config Release
 
@@ -36,11 +37,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY --from=builder /app/install/ .
+COPY --from=builder /app/install/bin/ .
 
+ENV GGML_BACKEND_PATH="/app"
+ENV LD_LIBRARY_PATH="/app:${LD_LIBRARY_PATH}"
 
-ENV LD_LIBRARY_PATH="/app/lib:${LD_LIBRARY_PATH}"
-ENV GGML_BACKEND_PATH="/app/lib"
 EXPOSE 8080
 
-ENTRYPOINT ["/app/bin/llama-server"]
+ENTRYPOINT ["/app/llama-server"]
