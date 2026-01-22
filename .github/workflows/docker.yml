@@ -7,10 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  # HOST: The registry hostname (e.g. ghcr.io)
   REGISTRY: ghcr.io
-  # IMAGE_NAME: The name of the image (e.g. user/repo)
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-hybrid-server:
@@ -24,6 +21,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # --- FIX START ---
+      - name: Downcase Repo Name
+        run: |
+          echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+      # --- FIX END ---
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -39,13 +43,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
+          # Use the lowercase env variable we created
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
-            # Tag as 'latest' only on default branch push
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'master') }}
-            # Custom tag for this hybrid build
             type=raw,value=server-hybrid
 
       - name: Determine Version Tag
@@ -65,9 +68,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Pass the release tag to the Dockerfile to clone the correct version
           build-args: |
             RELEASE_TAG=${{ env.RELEASE_TAG }}
-          # Use the cache we created in the other workflow
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:builder-cache
+          # Use the lowercase variable for caching too
+          cache-from: type=registry,ref=ghcr.io/${{ env.REPO_LOWER }}:builder-cache
           cache-to: type=inline
