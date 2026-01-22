@@ -2,7 +2,7 @@ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
 ARG RELEASE_TAG=master
 
-# Install build dependencies
+# Install build dependencies and Vulkan SDK
 RUN apt-get update && apt-get install -y \
     wget gnupg software-properties-common git cmake build-essential libcurl4-openssl-dev \
     && wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add - \
@@ -14,13 +14,15 @@ WORKDIR /app
 
 RUN git clone --depth 1 --branch ${RELEASE_TAG} https://github.com/ggml-org/llama.cpp.git .
 
-# Build with Dynamic Loading (DL=ON) and Install
+# Build with Dynamic Loading (DL=ON)
+# Added -DGGML_USE_CPU=ON as per PR #10469
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DGGML_VULKAN=ON \
     -DGGML_NATIVE=OFF \
     -DGGML_AVX=ON \
     -DGGML_AVX2=ON \
+    -DGGML_USE_CPU=ON \
     -DGGML_BACKEND_DL=ON \
     -DBUILD_SHARED_LIBS=ON \
     -DCMAKE_CUDA_ARCHITECTURES="86;89;90" \
@@ -28,7 +30,8 @@ RUN cmake -B build \
     && cmake --build build --config Release -j4 \
     && cmake --install build --config Release
 
-# PREPARE STAGING: Use 'cp -a' to preserve symlinks (libmtmd.so -> libmtmd.so.0)
+# --- CRITICAL STEP ---
+# Use 'cp -a' to copy libraries while PRESERVING symlinks (e.g. libmtmd.so.0 -> libmtmd.so)
 RUN mkdir -p /staging/lib && \
     mkdir -p /staging/bin && \
     cp -a /app/install/lib/. /staging/lib/ && \
@@ -48,14 +51,13 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy the staging directory (preserves symlinks)
+# Copy from staging to preserve the symlinks
 COPY --from=builder /staging/ .
 
-# CRITICAL ENV VARS
-# 1. LD_LIBRARY_PATH: Tells Linux where to find libmtmd.so.0, libggml.so, etc.
+# Point the OS loader to our library folder so it finds libmtmd.so.0
 ENV LD_LIBRARY_PATH="/app/lib:${LD_LIBRARY_PATH}"
 
-# 2. GGML_BACKEND_PATH: Tells llama.cpp where to scan for CPU/CUDA backends
+# Point llama.cpp to the folder containing the backends
 ENV GGML_BACKEND_PATH="/app/lib"
 
 EXPOSE 8080
