@@ -21,7 +21,7 @@ RUN cmake -B build \
     -DGGML_AVX2=ON \
     -DGGML_BACKEND_DL=ON \
     -DBUILD_SHARED_LIBS=ON \
-    -DCMAKE_CUDA_ARCHITECTURES="86;89;90" \
+    -DCMAKE_CUDA_ARCHITECTURES="86;89" \
     -DCMAKE_INSTALL_PREFIX=/app/install \
     -DCMAKE_INSTALL_LIBDIR=bin \
     && cmake --build build --config Release -j$(nproc) \
