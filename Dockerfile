@@ -2,7 +2,7 @@ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
 ARG RELEASE_TAG=master
 
-# Install build dependencies and Vulkan SDK
+# 1. Install dependencies
 RUN apt-get update && apt-get install -y \
     wget gnupg software-properties-common git cmake build-essential libcurl4-openssl-dev \
     && wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add - \
@@ -14,8 +14,8 @@ WORKDIR /app
 
 RUN git clone --depth 1 --branch ${RELEASE_TAG} https://github.com/ggml-org/llama.cpp.git .
 
-# Build with Dynamic Loading (DL=ON)
-# Added -DGGML_USE_CPU=ON as per PR #10469
+# 2. Build with CMAKE_INSTALL_PREFIX=/usr/local
+# This tells CMake to install libs to /usr/local/lib and binaries to /usr/local/bin
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DGGML_VULKAN=ON \
@@ -26,16 +26,9 @@ RUN cmake -B build \
     -DGGML_BACKEND_DL=ON \
     -DBUILD_SHARED_LIBS=ON \
     -DCMAKE_CUDA_ARCHITECTURES="86;89;90" \
-    -DCMAKE_INSTALL_PREFIX=/app/install \
-    && cmake --build build --config Release -j4 \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    && cmake --build build --config Release -j$(nproc) \
     && cmake --install build --config Release
-
-# --- CRITICAL STEP ---
-# Use 'cp -a' to copy libraries while PRESERVING symlinks (e.g. libmtmd.so.0 -> libmtmd.so)
-RUN mkdir -p /staging/lib && \
-    mkdir -p /staging/bin && \
-    cp -a /app/install/lib/. /staging/lib/ && \
-    cp -a /app/install/bin/. /staging/bin/
 
 # ----------------------------------------------------
 # FINAL STAGE
@@ -47,19 +40,28 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     mesa-vulkan-drivers \
     vulkan-tools \
+    binutils \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# 3. Copy files from the builder's system paths to the runtime's system paths
+# Note: We copy to /usr/local, which is standard for user-installed software
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /usr/local/lib /usr/local/lib
+COPY --from=builder /usr/local/include /usr/local/include
 
-# Copy from staging to preserve the symlinks
-COPY --from=builder /staging/ .
+# 4. CRITICAL: Run ldconfig
+# This updates the system's shared library cache so it knows about the new .so files in /usr/local/lib
+RUN ldconfig
 
-# Point the OS loader to our library folder so it finds libmtmd.so.0
-ENV LD_LIBRARY_PATH="/app/lib:${LD_LIBRARY_PATH}"
-
-# Point llama.cpp to the folder containing the backends
-ENV GGML_BACKEND_PATH="/app/lib"
+# 5. Set Backend Path
+# We point to /usr/local/lib where libggml-cpu.so now lives
+ENV GGML_BACKEND_PATH="/usr/local/lib"
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/bin/llama-server"]
+# 6. Debug Check (Optional)
+# This verifies that the system can resolve the CPU backend's dependencies before starting
+RUN echo "Checking CPU backend linkage..." && \
+    ldd /usr/local/lib/libggml-cpu.so
+
+ENTRYPOINT ["/usr/local/bin/llama-server"]
