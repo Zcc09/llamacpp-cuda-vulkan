@@ -33,7 +33,8 @@ services:
       - "q8_0"
       - "-fa"
       - "auto"
-
+      - "-m"
+      - "/mnt/Fast/Apps/llamacpp/models/Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf"
 
     deploy:
       resources:
