@@ -1,19 +1,41 @@
 services:
-  llamacpp:
+  # -------------------------------------------------------
+  # Service 1: The AMD Worker (Vulkan)
+  # -------------------------------------------------------
+  rpc-amd:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
+    container_name: llama-rpc-amd
     pull_policy: always
-    container_name: llamacpp
+    restart: unless-stopped
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+    # Start the RPC listener using the Vulkan binary
+    command: >
+      /usr/local/bin/vulkan/rpc-server 
+      --host 0.0.0.0 
+      --port 50052
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50052"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  # -------------------------------------------------------
+  # Service 2: The Main Server (CUDA + Web UI)
+  # -------------------------------------------------------
+  llama-main:
+    image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
+    container_name: llama-main
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "30069:8080"
     volumes:
       - "/mnt/Fast/Apps/llamacpp/models:/models"
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video,display
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/kfd:/dev/kfd 
+    depends_on:
+      rpc-amd:
+        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -21,3 +43,12 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    # Start the Main Server using CUDA binary
+    # Connects to RPC worker and offloads layers (-ngl 99)
+    command: >
+      /usr/local/bin/cuda/llama-server 
+      -m /models/nemotron-3-nano-30b-q4km.gguf
+      --host 0.0.0.0 
+      --port 8080 
+      --rpc rpc-amd:50052 
+      -ngl 99
