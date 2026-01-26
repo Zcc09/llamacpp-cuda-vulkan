@@ -1,15 +1,18 @@
 services:
+  # -------------------------------------------------------
+  # Service 1: The AMD Worker (Vulkan)
+  # -------------------------------------------------------
   rpc-amd:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-rpc-amd
-    pull_policy: missing
+    pull_policy: always
     restart: unless-stopped
-    init: true
-    networks:
-      - llama-net
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
+    # -------------------------------------------------------
+    # FIX: Ensure Vulkan worker also ignores stubs (just in case)
+    # -------------------------------------------------------
     environment:
       - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
     command: >
@@ -17,23 +20,23 @@ services:
       --host 0.0.0.0 
       --port 50052
     healthcheck:
-      test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/localhost/50052 || exit 1"]
+      test: ["CMD", "nc", "-z", "localhost", "50052"]
       interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
+      timeout: 10s
+      retries: 5
 
+  # -------------------------------------------------------
+  # Service 2: The Main Server (CUDA + Web UI)
+  # -------------------------------------------------------
   llama-main:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-main
-    pull_policy: missing
+    pull_policy: always
     restart: unless-stopped
-    networks:
-      - llama-net
     ports:
-      - "${PORT_MAIN:-30069}:8080"
+      - "30069:8080"
     volumes:
-      - "${HOST_MODEL_DIR}:/models"
+      - "/mnt/Fast/Apps/llamacpp/models:/models"
     depends_on:
       rpc-amd:
         condition: service_healthy
@@ -44,30 +47,21 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    # -------------------------------------------------------
+    # CRITICAL FIX: Override LD_LIBRARY_PATH
+    # We remove the 'stubs' path so it finds the real NVIDIA driver
+    # -------------------------------------------------------
     environment:
       - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    entrypoint: ["/bin/bash", "-c"]
-    command: 
-      - |
-        echo "Waiting for RPC host..."
-        timeout 60 bash -c 'until cat < /dev/null > /dev/tcp/llama-rpc-amd/50052; do sleep 2; done'
-        
-        echo "Starting Llama Server (Safe Mode)..."
-        exec /usr/local/bin/cuda/llama-server \
-          -m /models/${MODEL_FILE} \
-          --host 0.0.0.0 \
-          --port 8080 \
-          --rpc llama-rpc-amd:50052 \
-          -ngl 99 \
-          --mmap \
-          -c 16384 \
-          -b 2048 \
-          -ub 512 \
-          -t 6 \
-          --timeout 0
-
-networks:
-  llama-net:
-    driver: bridge
+    
+    # Run the server
+    command: >
+      /usr/local/bin/cuda/llama-server 
+      -m /models/nemotron-3-nano-30b-q4km.gguf
+      --host 0.0.0.0 
+      --port 8080 
+      --rpc rpc-amd:50052 
+      -ngl 99
+      -fa on
