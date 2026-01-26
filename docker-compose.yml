@@ -65,3 +65,8 @@ services:
       --rpc rpc-amd:50052 
       -ngl 99
       -fa on
+      --mmap
+      -c 64000
+      -ctk q8_0
+      -ctv q8_0
+      --timeout 0
