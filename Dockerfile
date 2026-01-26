@@ -1,67 +1,59 @@
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+# Base image with CUDA support (Ubuntu 22.04 based)
+FROM nvidia/cuda:12.6.0-devel-ubuntu22.04
 
-ARG RELEASE_TAG=master
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
 
 # 1. Install dependencies
+# 'vulkan-tools', 'libvulkan-dev', and 'spirv-tools' are critical for AMD/Vulkan support
 RUN apt-get update && apt-get install -y \
-    wget gnupg software-properties-common git cmake build-essential libcurl4-openssl-dev \
-    && wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add - \
-    && wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list \
-    && apt-get update && apt-get install -y vulkan-sdk \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-RUN git clone --depth 1 --branch ${RELEASE_TAG} https://github.com/ggml-org/llama.cpp.git .
-
-# 2. Build with CMAKE_INSTALL_PREFIX=/usr/local
-# This tells CMake to install libs to /usr/local/lib and binaries to /usr/local/bin
-RUN cmake -B build \
-    -DGGML_CUDA=ON \
-    -DGGML_VULKAN=ON \
-    -DGGML_NATIVE=OFF \
-    -DGGML_AVX=ON \
-    -DGGML_AVX2=ON \
-    -DGGML_USE_CPU=ON \
-    -DGGML_BACKEND_DL=ON \
-    -DBUILD_SHARED_LIBS=ON \
-    -DCMAKE_CUDA_ARCHITECTURES="86;89;90" \
-    -DCMAKE_INSTALL_PREFIX=/usr/local \
-    && cmake --build build --config Release -j$(nproc) \
-    && cmake --install build --config Release
-
-# ----------------------------------------------------
-# FINAL STAGE
-# ----------------------------------------------------
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
-
-RUN apt-get update && apt-get install -y \
-    libcurl4 \
+    build-essential \
+    cmake \
+    git \
+    wget \
+    curl \
+    libvulkan-dev \
+    vulkan-tools \
     libvulkan1 \
     mesa-vulkan-drivers \
-    vulkan-tools \
-    binutils \
+    spirv-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Copy files from the builder's system paths to the runtime's system paths
-# Note: We copy to /usr/local, which is standard for user-installed software
-COPY --from=builder /usr/local/bin /usr/local/bin
-COPY --from=builder /usr/local/lib /usr/local/lib
-COPY --from=builder /usr/local/include /usr/local/include
+# 2. Clone llama.cpp (Pulling latest master)
+WORKDIR /app
+RUN git clone https://github.com/ggml-org/llama.cpp.git .
 
-# 4. CRITICAL: Run ldconfig
-# This updates the system's shared library cache so it knows about the new .so files in /usr/local/lib
-RUN ldconfig
+# 3. Build Variant A: CUDA (NVIDIA)
+# We enable RPC to allow this binary to act as the main client or server
+WORKDIR /app/build-cuda
+RUN cmake .. \
+    -DGGML_CUDA=ON \
+    -DGGML_RPC=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    && make -j$(nproc)
 
-# 5. Set Backend Path
-# We point to /usr/local/lib where libggml-cpu.so now lives
-ENV GGML_BACKEND_PATH="/usr/local/lib"
+# 4. Build Variant B: Vulkan (AMD)
+# This binary will primarily be used as the RPC worker node
+WORKDIR /app/build-vulkan
+RUN cmake .. \
+    -DGGML_VULKAN=ON \
+    -DGGML_RPC=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    && make -j$(nproc)
 
-EXPOSE 8080
+# 5. Organize Binaries
+# We move them to a common path with distinct suffixes for clarity
+WORKDIR /app
+RUN mkdir -p /usr/local/bin/cuda && \
+    mkdir -p /usr/local/bin/vulkan && \
+    cp /app/build-cuda/bin/* /usr/local/bin/cuda/ && \
+    cp /app/build-vulkan/bin/* /usr/local/bin/vulkan/
 
-# 6. Debug Check (Optional)
-# This verifies that the system can resolve the CPU backend's dependencies before starting
-RUN echo "Checking CPU backend linkage..." && \
-    ldd /usr/local/lib/libggml-cpu.so
+# Add binaries to path (Optional, but useful)
+ENV PATH="/usr/local/bin/cuda:/usr/local/bin/vulkan:${PATH}"
 
-ENTRYPOINT ["/usr/local/bin/llama-server"]
+# Expose ports: 8080 (Main Server), 50052 (RPC Server default)
+EXPOSE 8080 50052
+
+# Default entrypoint (Starts a shell so you can launch both processes)
+CMD ["/bin/bash"]
