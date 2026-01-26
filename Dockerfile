@@ -1,4 +1,4 @@
-# Using CUDA 13.0 base (as discussed) on Ubuntu 24.04
+# Base image: CUDA 13.0 on Ubuntu 24.04 (Noble)
 FROM nvidia/cuda:13.0.0-devel-ubuntu24.04
 
 ARG GIT_TAG=master
@@ -27,6 +27,7 @@ WORKDIR /app
 RUN git clone --depth 1 --branch ${GIT_TAG} https://github.com/ggml-org/llama.cpp.git .
 
 # 3. Build Variant A: CUDA (Strictly RTX 30 & 40 Series)
+# Reverted to -j1 to prevent OOM crash during linking of libllama.so
 WORKDIR /app/build-cuda
 # 86 = RTX 3000 series (Ampere)
 # 89 = RTX 4000 series (Ada Lovelace)
@@ -36,17 +37,17 @@ RUN cmake .. \
     -DGGML_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CUDA_ARCHITECTURES="86;89" \
-    && make -j4
+    && make -j2
 
 # 4. Build Variant B: Vulkan (RX 7600XT)
-# Vulkan compiles shaders at runtime, so no arch flag is needed here.
+# Vulkan builds are lighter, but we keep -j1 for consistency and safety
 WORKDIR /app/build-vulkan
 RUN cmake .. \
     -DGGML_VULKAN=ON \
     -DGGML_RPC=ON \
     -DGGML_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    && make -j4
+    && make -j2
 
 # 5. Organize Binaries
 WORKDIR /app
