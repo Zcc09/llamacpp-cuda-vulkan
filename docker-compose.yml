@@ -61,7 +61,7 @@ services:
       --rpc rpc-amd:${PORT_RPC}
       -ngl 99
       --mmap
-      -fa
+      -fa on
       -c ${CTX_SIZE}
       -ctk ${CACHE_TYPE}
       -ctv ${CACHE_TYPE}
