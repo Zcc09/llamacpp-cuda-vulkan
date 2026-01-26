@@ -1,61 +1,61 @@
-# Base image with CUDA support
-FROM nvidia/cuda:12.6.0-devel-ubuntu22.04
+# Using CUDA 13.0 base (as discussed) on Ubuntu 24.04
+FROM nvidia/cuda:13.0.0-devel-ubuntu24.04
 
 ARG GIT_TAG=master
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. Install dependencies
+# 1. Install Dependencies & LunarG Vulkan SDK
+# We need the latest Vulkan SDK to support the RX 7600XT properly
 RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    software-properties-common \
+    && wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add - \
+    && wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list \
+    && apt-get update
+
+RUN apt-get install -y \
     build-essential \
     cmake \
     git \
-    libvulkan-dev \
-    vulkan-tools \
-    libvulkan1 \
-    mesa-vulkan-drivers \
-    spirv-tools \
+    curl \
+    vulkan-sdk \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Fix for missing libcuda.so.1 (Driver Stubs)
-# This allows linking without a physical GPU present during build
-RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
-ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
-
-# 3. Clone llama.cpp
+# 2. Clone llama.cpp
 WORKDIR /app
 RUN git clone --depth 1 --branch ${GIT_TAG} https://github.com/ggml-org/llama.cpp.git .
 
-# 4. Build Variant A: CUDA (NVIDIA)
-# We disable tests (-DGGML_BUILD_TESTS=OFF) and build only the specific targets we need.
+# 3. Build Variant A: CUDA (Strictly RTX 30 & 40 Series)
 WORKDIR /app/build-cuda
+# 86 = RTX 3000 series (Ampere)
+# 89 = RTX 4000 series (Ada Lovelace)
 RUN cmake .. \
     -DGGML_CUDA=ON \
     -DGGML_RPC=ON \
     -DGGML_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build . --config Release --target llama-server rpc-server --parallel $(nproc)
+    -DCMAKE_CUDA_ARCHITECTURES="86;89" \
+    && make -j4
 
-# 5. Build Variant B: Vulkan (AMD)
+# 4. Build Variant B: Vulkan (RX 7600XT)
+# Vulkan compiles shaders at runtime, so no arch flag is needed here.
 WORKDIR /app/build-vulkan
 RUN cmake .. \
     -DGGML_VULKAN=ON \
     -DGGML_RPC=ON \
     -DGGML_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build . --config Release --target llama-server rpc-server --parallel $(nproc)
+    && make -j4
 
-# 6. Organize Binaries
+# 5. Organize Binaries
 WORKDIR /app
 RUN mkdir -p /usr/local/bin/cuda && \
     mkdir -p /usr/local/bin/vulkan && \
-    # Copy specifically the targets we built
-    cp /app/build-cuda/bin/llama-server /usr/local/bin/cuda/ && \
-    cp /app/build-cuda/bin/rpc-server /usr/local/bin/cuda/ && \
-    cp /app/build-vulkan/bin/llama-server /usr/local/bin/vulkan/ && \
-    cp /app/build-vulkan/bin/rpc-server /usr/local/bin/vulkan/
+    cp /app/build-cuda/bin/* /usr/local/bin/cuda/ && \
+    cp /app/build-vulkan/bin/* /usr/local/bin/vulkan/
 
 ENV PATH="/usr/local/bin/cuda:/usr/local/bin/vulkan:${PATH}"
-
 EXPOSE 8080 50052
-CMD ["/bin/bash"]
 
+CMD ["/bin/bash"]
