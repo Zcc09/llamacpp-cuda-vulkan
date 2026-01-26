@@ -5,7 +5,6 @@ ARG GIT_TAG=master
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 1. Install Dependencies & LunarG Vulkan SDK
-# We need the latest Vulkan SDK to support the RX 7600XT properly
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -22,32 +21,38 @@ RUN apt-get install -y \
     vulkan-sdk \
     && rm -rf /var/lib/apt/lists/*
 
+# -----------------------------------------------------------------------------
+# CRITICAL FIX: Link against CUDA Stubs
+# -----------------------------------------------------------------------------
+# The build needs 'libcuda.so.1' (Driver API), but containers don't have drivers.
+# We point the linker to the stubs folder and create the expected symlink.
+ENV LIBRARY_PATH="/usr/local/cuda/lib64/stubs:${LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
+RUN ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
+
 # 2. Clone llama.cpp
 WORKDIR /app
 RUN git clone --depth 1 --branch ${GIT_TAG} https://github.com/ggml-org/llama.cpp.git .
 
 # 3. Build Variant A: CUDA (Strictly RTX 30 & 40 Series)
-# Reverted to -j1 to prevent OOM crash during linking of libllama.so
+# Using -j4 since you confirmed the runner can handle the RAM
 WORKDIR /app/build-cuda
-# 86 = RTX 3000 series (Ampere)
-# 89 = RTX 4000 series (Ada Lovelace)
 RUN cmake .. \
     -DGGML_CUDA=ON \
     -DGGML_RPC=ON \
     -DGGML_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CUDA_ARCHITECTURES="86;89" \
-    && make -j2
+    && make -j4
 
 # 4. Build Variant B: Vulkan (RX 7600XT)
-# Vulkan builds are lighter, but we keep -j1 for consistency and safety
 WORKDIR /app/build-vulkan
 RUN cmake .. \
     -DGGML_VULKAN=ON \
     -DGGML_RPC=ON \
     -DGGML_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    && make -j2
+    && make -j4
 
 # 5. Organize Binaries
 WORKDIR /app
