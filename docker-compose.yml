@@ -1,7 +1,4 @@
 services:
-  # -------------------------------------------------------
-  # Service 1: The AMD Worker (Vulkan)
-  # -------------------------------------------------------
   rpc-amd:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-rpc-amd
@@ -24,9 +21,6 @@ services:
       retries: 5
       start_period: 30s
 
-  # -------------------------------------------------------
-  # Service 2: The Main Server (CUDA + Web UI)
-  # -------------------------------------------------------
   llama-main:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-main
@@ -50,6 +44,10 @@ services:
       - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    # -------------------------------------------------------
+    # CRITICAL CHANGE: Removed -fa, -ctk, -ctv
+    # We are going back to basics to stop the crash.
+    # -------------------------------------------------------
     command: >
       /usr/local/bin/cuda/llama-server 
       -m /models/${MODEL_FILE}
@@ -58,12 +56,8 @@ services:
       --rpc rpc-amd:${PORT_RPC:-50052}
       -ngl 99
       --mmap
-      -fa on
       -c ${CTX_SIZE:-65536}
-      -ctk ${CACHE_TYPE_K:-q8_0}
-      -ctv ${CACHE_TYPE_V:-q8_0}
       -b ${BATCH_SIZE:-2048}
       -ub ${UBATCH_SIZE:-512}
       -t ${THREADS:-6}
       --timeout 0
-
