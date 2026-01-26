@@ -5,13 +5,15 @@ services:
   rpc-amd:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-rpc-amd
-    pull_policy: always
+    pull_policy: missing
     restart: unless-stopped
+    # init: true handles SIGTERM correctly, preventing "port in use" errors on restart
+    init: true
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
     environment:
-      # FIX: Force Vulkan to use system libraries, ignoring CUDA stubs
+      # Force Vulkan to use system libraries
       - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
     command: >
       /usr/local/bin/vulkan/rpc-server 
@@ -20,8 +22,10 @@ services:
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "${PORT_RPC}"]
       interval: 5s
-      timeout: 10s
+      timeout: 5s
       retries: 5
+      # Grace period: Wait 30s before checking health to allow boot
+      start_period: 30s
 
   # -------------------------------------------------------
   # Service 2: The Main Server (CUDA + Web UI)
@@ -29,7 +33,7 @@ services:
   llama-main:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-main
-    pull_policy: always
+    pull_policy: missing
     restart: unless-stopped
     ports:
       - "${PORT_MAIN}:8080"
@@ -46,13 +50,10 @@ services:
               count: all
               capabilities: [gpu]
     environment:
-      # FIX: Force CUDA to use real NVIDIA drivers, ignoring stubs
+      # Force CUDA to use real NVIDIA drivers
       - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    # -------------------------------------------------------
-    # OPTIMIZED START COMMAND
-    # -------------------------------------------------------
     command: >
       /usr/local/bin/cuda/llama-server 
       -m /models/${MODEL_FILE}
@@ -61,11 +62,12 @@ services:
       --rpc rpc-amd:${PORT_RPC}
       -ngl 99
       --mmap
-      -fa on
+      -fa
       -c ${CTX_SIZE}
-      -ctk ${CACHE_TYPE}
-      -ctv ${CACHE_TYPE}
+      -ctk ${CACHE_TYPE_K}
+      -ctv ${CACHE_TYPE_V}
       -b ${BATCH_SIZE}
       -ub ${UBATCH_SIZE}
       -t ${THREADS}
       --timeout 0
+
