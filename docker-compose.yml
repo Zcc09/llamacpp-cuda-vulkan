@@ -7,24 +7,21 @@ services:
     container_name: llama-rpc-amd
     pull_policy: missing
     restart: unless-stopped
-    # init: true handles SIGTERM correctly, preventing "port in use" errors on restart
     init: true
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
     environment:
-      # Force Vulkan to use system libraries
       - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
     command: >
       /usr/local/bin/vulkan/rpc-server 
       --host 0.0.0.0 
-      --port ${PORT_RPC}
+      --port ${PORT_RPC:-50052}
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "${PORT_RPC}"]
+      test: ["CMD", "nc", "-z", "localhost", "${PORT_RPC:-50052}"]
       interval: 5s
       timeout: 5s
       retries: 5
-      # Grace period: Wait 30s before checking health to allow boot
       start_period: 30s
 
   # -------------------------------------------------------
@@ -36,7 +33,7 @@ services:
     pull_policy: missing
     restart: unless-stopped
     ports:
-      - "${PORT_MAIN}:8080"
+      - "${PORT_MAIN:-30069}:8080"
     volumes:
       - "${HOST_MODEL_DIR}:/models"
     depends_on:
@@ -50,7 +47,6 @@ services:
               count: all
               capabilities: [gpu]
     environment:
-      # Force CUDA to use real NVIDIA drivers
       - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
@@ -59,15 +55,15 @@ services:
       -m /models/${MODEL_FILE}
       --host 0.0.0.0 
       --port 8080 
-      --rpc rpc-amd:${PORT_RPC}
+      --rpc rpc-amd:${PORT_RPC:-50052}
       -ngl 99
       --mmap
       -fa on
-      -c ${CTX_SIZE}
-      -ctk ${CACHE_TYPE_K}
-      -ctv ${CACHE_TYPE_V}
-      -b ${BATCH_SIZE}
-      -ub ${UBATCH_SIZE}
-      -t ${THREADS}
+      -c ${CTX_SIZE:-65536}
+      -ctk ${CACHE_TYPE_K:-q8_0}
+      -ctv ${CACHE_TYPE_V:-q8_0}
+      -b ${BATCH_SIZE:-2048}
+      -ub ${UBATCH_SIZE:-512}
+      -t ${THREADS:-6}
       --timeout 0
 
