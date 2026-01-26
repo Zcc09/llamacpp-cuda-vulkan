@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # We will set IMAGE_NAME dynamically in the steps to ensure it is lowercase
 
 jobs:
   check-and-build:
@@ -17,13 +17,18 @@ jobs:
       packages: write
 
     steps:
-      - name: Checkout your repo (for Dockerfile)
+      - name: Checkout your repo
         uses: actions/checkout@v4
+
+      # --- FIX START ---
+      - name: Lowercase Repository Name
+        run: |
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+      # --- FIX END ---
 
       - name: Get latest upstream release tag
         id: get_tag
         run: |
-          # Fetch the latest release data from ggml-org/llama.cpp
           LATEST_TAG=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r .tag_name)
           echo "Latest upstream tag: $LATEST_TAG"
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
@@ -33,7 +38,7 @@ jobs:
         env:
           TAG: ${{ steps.get_tag.outputs.tag }}
         run: |
-          # Check if this tag already exists in your GHCR registry
+          # Use the lowercased env.IMAGE_NAME here
           if curl -s -f -l "https://ghcr.io/v2/${{ env.IMAGE_NAME }}/manifests/${{ env.TAG }}" > /dev/null; then
             echo "Image for tag $TAG already exists. Skipping build."
             echo "exists=true" >> $GITHUB_OUTPUT
