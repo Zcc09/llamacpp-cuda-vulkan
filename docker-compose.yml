@@ -10,17 +10,15 @@ services:
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
-    # -------------------------------------------------------
-    # FIX: Ensure Vulkan worker also ignores stubs (just in case)
-    # -------------------------------------------------------
     environment:
+      # FIX: Force Vulkan to use system libraries, ignoring CUDA stubs
       - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
     command: >
       /usr/local/bin/vulkan/rpc-server 
       --host 0.0.0.0 
-      --port 50052
+      --port ${PORT_RPC}
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50052"]
+      test: ["CMD", "nc", "-z", "localhost", "${PORT_RPC}"]
       interval: 5s
       timeout: 10s
       retries: 5
@@ -34,9 +32,9 @@ services:
     pull_policy: always
     restart: unless-stopped
     ports:
-      - "30069:8080"
+      - "${PORT_MAIN}:8080"
     volumes:
-      - "/mnt/Fast/Apps/llamacpp/models:/models"
+      - "${HOST_MODEL_DIR}:/models"
     depends_on:
       rpc-amd:
         condition: service_healthy
@@ -47,21 +45,27 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    # -------------------------------------------------------
-    # CRITICAL FIX: Override LD_LIBRARY_PATH
-    # We remove the 'stubs' path so it finds the real NVIDIA driver
-    # -------------------------------------------------------
     environment:
+      # FIX: Force CUDA to use real NVIDIA drivers, ignoring stubs
       - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    
-    # Run the server
+    # -------------------------------------------------------
+    # OPTIMIZED START COMMAND
+    # -------------------------------------------------------
     command: >
       /usr/local/bin/cuda/llama-server 
-      -m /models/nemotron-3-nano-30b-q4km.gguf
+      -m /models/${MODEL_FILE}
       --host 0.0.0.0 
       --port 8080 
-      --rpc rpc-amd:50052 
+      --rpc rpc-amd:${PORT_RPC}
       -ngl 99
       --mmap
+      -fa
+      -c ${CTX_SIZE}
+      -ctk ${CACHE_TYPE}
+      -ctv ${CACHE_TYPE}
+      -b ${BATCH_SIZE}
+      -ub ${UBATCH_SIZE}
+      -t ${THREADS}
+      --timeout 0
