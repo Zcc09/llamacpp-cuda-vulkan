@@ -1,20 +1,14 @@
 # Base image with CUDA support
 FROM nvidia/cuda:12.6.0-devel-ubuntu22.04
 
-# Argument for the specific llama.cpp tag to build (default to master if not specified)
 ARG GIT_TAG=master
-
-# Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 1. Install dependencies
-# 'vulkan-tools', 'libvulkan-dev', and 'spirv-tools' are critical for AMD/Vulkan support
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
-    wget \
-    curl \
     libvulkan-dev \
     vulkan-tools \
     libvulkan1 \
@@ -22,40 +16,46 @@ RUN apt-get update && apt-get install -y \
     spirv-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Clone specific version of llama.cpp
+# 2. Fix for missing libcuda.so.1 (Driver Stubs)
+# This allows linking without a physical GPU present during build
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
+
+# 3. Clone llama.cpp
 WORKDIR /app
 RUN git clone --depth 1 --branch ${GIT_TAG} https://github.com/ggml-org/llama.cpp.git .
 
-# 3. Build Variant A: CUDA (NVIDIA)
-# We use -j1 to prevent Out-Of-Memory (OOM) errors on GitHub Actions runners
+# 4. Build Variant A: CUDA (NVIDIA)
+# We disable tests (-DGGML_BUILD_TESTS=OFF) and build only the specific targets we need.
 WORKDIR /app/build-cuda
 RUN cmake .. \
     -DGGML_CUDA=ON \
     -DGGML_RPC=ON \
+    -DGGML_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    && make -j1
+    && cmake --build . --config Release --target llama-server rpc-server --parallel $(nproc)
 
-# 4. Build Variant B: Vulkan (AMD)
+# 5. Build Variant B: Vulkan (AMD)
 WORKDIR /app/build-vulkan
 RUN cmake .. \
     -DGGML_VULKAN=ON \
     -DGGML_RPC=ON \
+    -DGGML_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release \
-    && make -j1
+    && cmake --build . --config Release --target llama-server rpc-server --parallel $(nproc)
 
-# 5. Organize Binaries
-# Move them to distinct folders so you can call specific backends easily
+# 6. Organize Binaries
 WORKDIR /app
 RUN mkdir -p /usr/local/bin/cuda && \
     mkdir -p /usr/local/bin/vulkan && \
-    cp /app/build-cuda/bin/* /usr/local/bin/cuda/ && \
-    cp /app/build-vulkan/bin/* /usr/local/bin/vulkan/
+    # Copy specifically the targets we built
+    cp /app/build-cuda/bin/llama-server /usr/local/bin/cuda/ && \
+    cp /app/build-cuda/bin/rpc-server /usr/local/bin/cuda/ && \
+    cp /app/build-vulkan/bin/llama-server /usr/local/bin/vulkan/ && \
+    cp /app/build-vulkan/bin/rpc-server /usr/local/bin/vulkan/
 
-# Add binaries to path (Optional, but useful for quick access)
 ENV PATH="/usr/local/bin/cuda:/usr/local/bin/vulkan:${PATH}"
 
-# Expose ports: 8080 (Main Server), 50052 (RPC Server default)
 EXPOSE 8080 50052
-
-# Default entrypoint (Starts a shell so you can launch both processes)
 CMD ["/bin/bash"]
+
