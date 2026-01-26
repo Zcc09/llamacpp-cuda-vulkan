@@ -1,7 +1,4 @@
 services:
-  # -------------------------------------------------------
-  # Service 1: The AMD Worker (Vulkan)
-  # -------------------------------------------------------
   rpc-amd:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-rpc-amd
@@ -20,16 +17,12 @@ services:
       --host 0.0.0.0 
       --port 50052
     healthcheck:
-      # Check if port is open using Bash (no extra tools needed)
       test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/localhost/50052 || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
 
-  # -------------------------------------------------------
-  # Service 2: The Main Server (CUDA + Web UI)
-  # -------------------------------------------------------
   llama-main:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-main
@@ -55,19 +48,13 @@ services:
       - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    # -------------------------------------------------------
-    # FIXED COMMAND: Connection Wait Loop + q4_0 Cache
-    # -------------------------------------------------------
     entrypoint: ["/bin/bash", "-c"]
     command: 
       - |
-        echo "Waiting for RPC host to be resolvable..."
-        until getent hosts llama-rpc-amd; do sleep 1; done
-        echo "RPC host found. Waiting for port 50052..."
-        # Simple bash-based wait loop
+        echo "Waiting for RPC host..."
         timeout 60 bash -c 'until cat < /dev/null > /dev/tcp/llama-rpc-amd/50052; do sleep 2; done'
         
-        echo "RPC Ready. Starting Llama Server..."
+        echo "Starting Llama Server (Safe Mode)..."
         exec /usr/local/bin/cuda/llama-server \
           -m /models/${MODEL_FILE} \
           --host 0.0.0.0 \
@@ -75,16 +62,12 @@ services:
           --rpc llama-rpc-amd:50052 \
           -ngl 99 \
           --mmap \
-          -fa on \
-          -c ${CTX_SIZE:-65536} \
-          -ctk q8_0 \
-          -ctv q8_0 \
-          -b ${BATCH_SIZE:-2048} \
-          -ub ${UBATCH_SIZE:-512} \
-          -t ${THREADS:-6} \
+          -c 16384 \
+          -b 2048 \
+          -ub 512 \
+          -t 6 \
           --timeout 0
 
-# Explicit network to ensure stable DNS names
 networks:
   llama-net:
     driver: bridge
