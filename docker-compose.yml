@@ -1,10 +1,15 @@
 services:
+  # -------------------------------------------------------
+  # Service 1: The AMD Worker (Vulkan)
+  # -------------------------------------------------------
   rpc-amd:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-rpc-amd
     pull_policy: missing
     restart: unless-stopped
     init: true
+    networks:
+      - llama-net
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
@@ -14,18 +19,24 @@ services:
       /usr/local/bin/vulkan/rpc-server 
       --host 0.0.0.0 
       --port ${PORT_RPC:-50052}
+    # FIX: Robust Bash-based healthcheck (No dependency on 'nc')
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "${PORT_RPC:-50052}"]
+      test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/localhost/${PORT_RPC:-50052} || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 10s
 
+  # -------------------------------------------------------
+  # Service 2: The Main Server (CUDA + Web UI)
+  # -------------------------------------------------------
   llama-main:
     image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
     container_name: llama-main
     pull_policy: missing
     restart: unless-stopped
+    networks:
+      - llama-net
     ports:
       - "${PORT_MAIN:-30069}:8080"
     volumes:
@@ -44,10 +55,8 @@ services:
       - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    # -------------------------------------------------------
-    # CRITICAL CHANGE: Removed -fa, -ctk, -ctv
-    # We are going back to basics to stop the crash.
-    # -------------------------------------------------------
+    # FIX: Re-adding a connection retry loop in the command is hard, 
+    # so we rely on the improved healthcheck above.
     command: >
       /usr/local/bin/cuda/llama-server 
       -m /models/${MODEL_FILE}
@@ -61,3 +70,8 @@ services:
       -ub ${UBATCH_SIZE:-512}
       -t ${THREADS:-6}
       --timeout 0
+
+# FIX: Explicit network definition ensures hostnames resolve correctly
+networks:
+  llama-net:
+    driver: bridge
