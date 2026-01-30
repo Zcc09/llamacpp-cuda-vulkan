@@ -1,0 +1,9 @@
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y git build-essential cmake
+
+RUN git clone https://github.com/ggerganov/llama.cpp.git .
+
+# BUILD FOR NVIDIA (sm_86 = 3060, sm_89 = 4060 Ti)
+RUN cmake -B build
