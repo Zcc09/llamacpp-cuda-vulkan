@@ -1,7 +1,7 @@
 ARG CUDA_VERSION=12.4.1
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS builder
 
-ARG LLAMA_TAG
+ARG LLAMA_TAG=master
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y git build-essential cmake
