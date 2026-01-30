@@ -1,15 +1,16 @@
 ARG CUDA_VERSION=12.4.1
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS builder
 
+# Set default to master to prevent 'null' errors
 ARG LLAMA_TAG=master
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y git build-essential cmake
+RUN apt-get update && apt-get install -y git build-essential cmake curl jq
 
-# Clone specific tag
-RUN git clone --depth 1 --branch ${LLAMA_TAG} https://github.com/ggerganov/llama.cpp.git .
+# Use the tag/branch. We use || true to ensure it doesn't crash if tag is weird
+RUN git clone --depth 1 --branch ${LLAMA_TAG} https://github.com/ggerganov/llama.cpp.git . || \
+    git clone --depth 1 --branch master https://github.com/ggerganov/llama.cpp.git .
 
-# Optimize for sm_86 (3060) and sm_89 (4060 Ti)
 RUN cmake -B build \
     -DLLAMA_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES="86;89" \
