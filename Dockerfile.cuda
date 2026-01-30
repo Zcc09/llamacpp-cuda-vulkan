@@ -5,5 +5,20 @@ RUN apt-get update && apt-get install -y git build-essential cmake
 
 RUN git clone https://github.com/ggerganov/llama.cpp.git .
 
-# BUILD FOR NVIDIA (sm_86 = 3060, sm_89 = 4060 Ti)
-RUN cmake -B build
+# BUILD FOR NVIDIA
+# sm_89 = 4060 Ti (Ada)
+# sm_86 = 3060 (Ampere)
+RUN cmake -B build \
+    -DLLAMA_CUDA=ON \
+    -DCMAKE_CUDA_ARCHITECTURES="86;89" \
+    -DLLAMA_FLASH_ATTN=ON \
+    -DCMAKE_BUILD_TYPE=Release
+RUN cmake --build build --config Release --target llama-server -j $(nproc)
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+WORKDIR /app
+COPY --from=builder /app/build/bin/llama-server /app/llama-server
+
+# Standard port for llama.cpp server
+EXPOSE 8080
+ENTRYPOINT ["./llama-server"]
