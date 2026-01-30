@@ -1,7 +1,7 @@
 ARG ROCM_VERSION=6.0
 FROM rocm/dev-ubuntu-22.04:${ROCm_VERSION} AS builder
 
-ARG LLAMA_TAG
+ARG LLAMA_TAG=master
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y git build-essential cmake
