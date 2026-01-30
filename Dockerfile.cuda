@@ -1,21 +1,24 @@
 ARG CUDA_VERSION=12.4.1
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS builder
 
-# Set default to master to prevent 'null' errors
 ARG LLAMA_TAG=master
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y git build-essential cmake curl jq
 
-# Use the tag/branch. We use || true to ensure it doesn't crash if tag is weird
+# Clone the repository
 RUN git clone --depth 1 --branch ${LLAMA_TAG} https://github.com/ggerganov/llama.cpp.git . || \
     git clone --depth 1 --branch master https://github.com/ggerganov/llama.cpp.git .
+
+# FIX: Add CUDA stubs to the library path so the linker can find libcuda.so
+ENV LIBRARY_PATH /usr/local/cuda/lib64/stubs:${LIBRARY_PATH}
 
 RUN cmake -B build \
     -DLLAMA_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES="86;89" \
     -DLLAMA_FLASH_ATTN=ON \
     -DCMAKE_BUILD_TYPE=Release
+    
 RUN cmake --build build --config Release --target llama-server -j $(nproc)
 
 FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
