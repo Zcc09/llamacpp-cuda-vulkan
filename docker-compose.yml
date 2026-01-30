@@ -25,6 +25,7 @@ services:
           devices:
             - driver: nvidia
               count: all
+              capabilities: all
     command: >
       -m /models/nemotron-3-nano-30b-q4km.gguf
       --host 0.0.0.0
@@ -33,4 +34,4 @@ services:
       --main-gpu 0
       --tensor-split 16,12
       --rpc amd-worker:50052
-      --flash-attn
+      --fa on
