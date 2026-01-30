@@ -10,8 +10,7 @@ RUN git clone --depth 1 --branch ${LLAMA_TAG} https://github.com/ggerganov/llama
     git clone --depth 1 --branch master https://github.com/ggerganov/llama.cpp.git .
 
 
-# Corrected path: The source is in the 'llama.cpp' directory inside /app
-RUN sed -i '/#include <vector>/a #include <cstddef>' ./llama.cpp/common/ngram-mod.h
+RUN sed -i '/#include <vector>/a #include <cstddef>' common/ngram-mod.h
 
 
 RUN cmake -B build \
