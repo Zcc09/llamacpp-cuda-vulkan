@@ -1,72 +1,41 @@
 services:
-  # -------------------------------------------------------
-  # Service 1: The AMD Worker (Vulkan)
-  # -------------------------------------------------------
-  rpc-amd:
-    image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
-    container_name: llama-rpc-amd
-    pull_policy: always
-    restart: unless-stopped
+  # The AMD GPU Worker (RPC Server)
+  amd-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocm
+    container_name: llama-amd-worker
+    restart: always
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
-    # -------------------------------------------------------
-    # FIX: Ensure Vulkan worker also ignores stubs (just in case)
-    # -------------------------------------------------------
-    environment:
-      - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
-    command: >
-      /usr/local/bin/vulkan/rpc-server 
-      --host 0.0.0.0 
-      --port 50052
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50052"]
-      interval: 5s
-      timeout: 10s
-      retries: 5
+    # This server just sits and waits for the main NVIDIA card to send it work
+    command: ["./rpc-server", "-H", "0.0.0.0", "-p", "50052"]
 
-  # -------------------------------------------------------
-  # Service 2: The Main Server (CUDA + Web UI)
-  # -------------------------------------------------------
-  llama-main:
-    image: ghcr.io/zcc09/llamacpp-cuda-vulkan:latest
-    container_name: llama-main
-    pull_policy: always
-    restart: unless-stopped
-    ports:
-      - "30069:8080"
-    volumes:
-      - "/mnt/Fast/Apps/llamacpp/models:/models"
+  # The Main LLM Server (NVIDIA Controller)
+  llama-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
+    container_name: llama-main-server
     depends_on:
-      rpc-amd:
-        condition: service_healthy
+      - amd-worker
+    ports:
+      - "8080:8080"
+    volumes:
+      - /mnt/your-pool/models:/models  # Change to your TrueNAS model path
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    # -------------------------------------------------------
-    # CRITICAL FIX: Override LD_LIBRARY_PATH
-    # We remove the 'stubs' path so it finds the real NVIDIA driver
-    # -------------------------------------------------------
-    environment:
-      - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    
-    # Run the server
+              count: all  # Access both 4060 Ti and 3060
+    # THE CRITICAL COMMAND
     command: >
-      /usr/local/bin/cuda/llama-server 
       -m /models/nemotron-3-nano-30b-q4km.gguf
-      --host 0.0.0.0 
-      --port 8080 
-      --rpc rpc-amd:50052 
-      -ngl 99
-      -fa on
-      --mmap
-      -c 64000
-      -ctk q8_0
-      -ctv q8_0
-      --timeout 0
+      --host 0.0.0.0
+      --port 8080
+      --n-gpu-layers 999
+      --main-gpu 0
+      --rpc amd-worker:50052
+      --tensor-split 16,12
