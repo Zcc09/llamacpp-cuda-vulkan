@@ -25,7 +25,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: all
+              capabilities: [gpu, compute, graphics]
     command: >
       -m /models/nemotron-3-nano-30b-q4km.gguf
       --host 0.0.0.0
