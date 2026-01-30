@@ -1,41 +1,36 @@
 services:
-  # The AMD GPU Worker (RPC Server)
   amd-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.rocm
+    # REPLACEME: with your username in lowercase
+    image: ghcr.io/zcc09/llama-rocm:latest
     container_name: llama-amd-worker
-    restart: always
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
-    # This server just sits and waits for the main NVIDIA card to send it work
-    command: ["./rpc-server", "-H", "0.0.0.0", "-p", "50052"]
+    command: ["-H", "0.0.0.0", "-p", "50052"]
+    restart: always
 
-  # The Main LLM Server (NVIDIA Controller)
   llama-server:
-    build:
-      context: .
-      dockerfile: Dockerfile.cuda
+    # REPLACEME: with your username in lowercase
+    image: ghcr.io/zcc09/llama-cuda:latest
     container_name: llama-main-server
     depends_on:
       - amd-worker
     ports:
       - "8080:8080"
     volumes:
-      - /mnt/your-pool/models:/models  # Change to your TrueNAS model path
+      - "/mnt/Fast/Apps/llamacpp/models:/models"
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all  # Access both 4060 Ti and 3060
-    # THE CRITICAL COMMAND
+              count: all
     command: >
       -m /models/nemotron-3-nano-30b-q4km.gguf
       --host 0.0.0.0
       --port 8080
       --n-gpu-layers 999
       --main-gpu 0
-      --rpc amd-worker:50052
       --tensor-split 16,12
+      --rpc amd-worker:50052
+      --flash-attn
