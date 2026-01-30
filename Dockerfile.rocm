@@ -9,11 +9,11 @@ RUN apt-get update && apt-get install -y git build-essential cmake curl jq
 RUN git clone --depth 1 --branch ${LLAMA_TAG} https://github.com/ggerganov/llama.cpp.git . || \
     git clone --depth 1 --branch master https://github.com/ggerganov/llama.cpp.git .
 
-# --- FIX FOR COMPILATION ERROR ---
-# Directly insert the missing include into the problematic header file
-RUN sed -i '/#include <vector>/a #include <cstddef>' llama.cpp/common/ngram-mod.h
 
-# Use modern GGML flags for ROCm/AMD
+# Corrected path: The source is in the 'llama.cpp' directory inside /app
+RUN sed -i '/#include <vector>/a #include <cstddef>' ./llama.cpp/common/ngram-mod.h
+
+
 RUN cmake -B build \
     -DLLAMA_HIPBLAS=ON \
     -DLLAMA_RPC=ON \
