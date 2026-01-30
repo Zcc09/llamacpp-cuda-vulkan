@@ -1,13 +1,15 @@
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+ARG CUDA_VERSION=12.4.1
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS builder
 
+ARG LLAMA_TAG
 WORKDIR /app
+
 RUN apt-get update && apt-get install -y git build-essential cmake
 
-RUN git clone https://github.com/ggerganov/llama.cpp.git .
+# Clone specific tag
+RUN git clone --depth 1 --branch ${LLAMA_TAG} https://github.com/ggerganov/llama.cpp.git .
 
-# BUILD FOR NVIDIA
-# sm_89 = 4060 Ti (Ada)
-# sm_86 = 3060 (Ampere)
+# Optimize for sm_86 (3060) and sm_89 (4060 Ti)
 RUN cmake -B build \
     -DLLAMA_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES="86;89" \
@@ -15,10 +17,8 @@ RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release
 RUN cmake --build build --config Release --target llama-server -j $(nproc)
 
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
 WORKDIR /app
 COPY --from=builder /app/build/bin/llama-server /app/llama-server
-
-# Standard port for llama.cpp server
 EXPOSE 8080
 ENTRYPOINT ["./llama-server"]
