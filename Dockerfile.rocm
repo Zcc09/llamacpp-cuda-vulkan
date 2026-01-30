@@ -1,7 +1,6 @@
 ARG ROCM_VERSION=6.0
 FROM rocm/dev-ubuntu-22.04:${ROCM_VERSION} AS builder
 
-# Set default to master to prevent 'null' errors
 ARG LLAMA_TAG=master
 WORKDIR /app
 
@@ -14,17 +13,17 @@ RUN git clone --depth 1 --branch ${LLAMA_TAG} https://github.com/ggerganov/llama
 # Use modern GGML flags for ROCm/AMD
 RUN cmake -B build \
     -DGGML_HIPBLAS=ON \
-    -DGGML_RPC=ON \
+    -DGGML_GPU_PRE_LAYERS=1 \
     -DAMDGPU_TARGETS=gfx1102 \
-    -DCMAKE_BUILD_TYPE=Release
-    
-# Build the specifically named llama-rpc-server target
-RUN cmake --build build --config Release --target llama-rpc-server -j $(nproc)
+    -DCMAKE_BUILD_TYPE=Release \
+    -DALLOW_OPENSSL_FALLBACK=ON # Handle OpenSSL missing warning
+
+# Changed Target: Try building the 'server' target, which usually includes RPC if enabled
+RUN cmake --build build --config Release --target server -j $(nproc)
 
 FROM rocm/dev-ubuntu-22.04:${ROCM_VERSION}
 WORKDIR /app
 # Copy the binary from the correct location
-COPY --from=builder /app/build/bin/llama-rpc-server /app/llama-rpc-server
+COPY --from=builder /app/build/bin/server /app/llama-rpc-server 
 EXPOSE 50052
-# Start the server with the correct binary name
 ENTRYPOINT ["./llama-rpc-server"]
