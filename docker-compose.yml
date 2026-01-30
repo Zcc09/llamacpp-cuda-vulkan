@@ -16,7 +16,7 @@ services:
     depends_on:
       - amd-worker
     ports:
-      - "8080:8080"
+      - "30069:8080"
     volumes:
       - "/mnt/Fast/Apps/llamacpp/models:/models"
     deploy:
