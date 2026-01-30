@@ -6,24 +6,23 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y git build-essential cmake curl jq
 
-# Clone the repository
 RUN git clone --depth 1 --branch ${LLAMA_TAG} https://github.com/ggerganov/llama.cpp.git . || \
     git clone --depth 1 --branch master https://github.com/ggerganov/llama.cpp.git .
 
-# Use modern GGML flags for ROCm/AMD
+# Use LLAMA_HIPBLAS and enable RPC features
 RUN cmake -B build \
-    -DGGML_HIPBLAS=ON \
-    -DGGML_GPU_PRE_LAYERS=1 \
+    -DLLAMA_HIPBLAS=ON \
+    -DLLAMA_RPC=ON \
     -DAMDGPU_TARGETS=gfx1102 \
     -DCMAKE_BUILD_TYPE=Release \
-    -DALLOW_OPENSSL_FALLBACK=ON # Handle OpenSSL missing warning
-
-# Changed Target: Try building the 'server' target, which usually includes RPC if enabled
-RUN cmake --build build --config Release --target server -j $(nproc)
+    -DALLOW_OPENSSL_FALLBACK=ON
+    
+# *** THE FIX: Use the standard 'llama-server' target ***
+RUN cmake --build build --config Release --target llama-server -j $(nproc)
 
 FROM rocm/dev-ubuntu-22.04:${ROCM_VERSION}
 WORKDIR /app
-# Copy the binary from the correct location
-COPY --from=builder /app/build/bin/server /app/llama-rpc-server 
+# Copy the binary named 'llama-server' from the build directory
+COPY --from=builder /app/build/bin/llama-server /app/llama-rpc-server
 EXPOSE 50052
 ENTRYPOINT ["./llama-rpc-server"]
