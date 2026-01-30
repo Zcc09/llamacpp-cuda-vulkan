@@ -3,11 +3,10 @@ name: Build and Push llama.cpp
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Manual trigger
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  # Image names MUST be lowercase
   IMAGE_CUDA: llama-cuda
   IMAGE_ROCM: llama-rocm
 
@@ -25,7 +24,14 @@ jobs:
       - name: Get latest llama.cpp tag
         id: get_tag
         run: |
-          TAG=$(curl -s https://api.github.com/repos/ggerganov/llama.cpp/releases/latest | jq -r .tag_name)
+          # Fetch the tag name. If it fails or returns null, default to 'master'
+          TAG=$(curl -s -H "User-Agent: GitHub-Actions" https://api.github.com/repos/ggerganov/llama.cpp/releases/latest | jq -r .tag_name)
+          
+          if [ "$TAG" == "null" ] || [ -z "$TAG" ]; then
+          echo "Warning: Could not fetch latest tag, falling back to 'master'"
+          TAG="master"
+          fi
+          
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
